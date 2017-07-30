@@ -1,0 +1,69 @@
+# load libraries and data
+library(randomForest)
+library(ggplot2)
+library(dplyr)
+
+train <- read.csv('../input/train.csv', stringsAsFactors = F)
+test  <- read.csv('../input/test.csv', stringsAsFactors = F)
+full  <- bind_rows(train, test)
+
+# Explore the data
+full$deck <- gsub("([A-G]).*","\\1", full$Cabin) # splits out the deck
+full$family_size <- full$SibSp + full$Parch + 1 # gives us the total size of the family aboard
+full$family_name <- sub("(\\w+).*","\\1", full$Name) # gives the family name (in case it's useful)
+full$title <- gsub('(.*, )|(\\..*)', '', full$Name) # Gives the title or honorific
+
+# Fix those titles
+rare_title <- c('Dona', 'Lady', 'the Countess','Capt', 'Col', 'Don',
+                'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer')
+
+full$title[full$title == 'Mlle']        <- 'Miss'
+full$title[full$title == 'Ms']          <- 'Miss'
+full$title[full$title == 'Mme']         <- 'Mrs'
+full$title[full$title %in% rare_title]  <- 'Rare Title'
+full$title <- as.factor(full$title) # now it can be used in modelling
+
+# Change age to ranges
+full$age_group <- "adult"
+full$age_group[full$Age > 60] <- "elderly"
+full$age_group[full$Age < 18] <- "child"
+full$age_group <- as.factor(full$age_group)
+
+# Add in variable to show mothers - female adult passengers with the title "Mrs" and 1 or more in the Parch variables
+full$is_mother <- 0
+full$is_mother[full$Sex=="female" & full$Parch>0 & full$title=="Mrs"] <- 1
+
+
+# Fill in the blank ports and fare (3 rows) (stolen from Megan Risdal on Kaggle!)
+full$Embarked[c(62,830)] <- 'C'
+full$Fare[1044] <- median(full[full$Pclass == '3' & full$Embarked == 'S', ]$Fare, na.rm = TRUE)
+
+
+# Work out missing ages based on title, fare paid, is.female, parch and sibsp values
+age.not.present <- subset(full,is.na(full$Age)) # create subset where there's no age
+age.present <- full[ !(full$PassengerId %in% age.not.present$PassengerId),] # use the first subset to create the Second
+
+set.seed(730)
+age.model <- randomForest(age_group ~ title + Fare + Parch + SibSp, data=age.present)
+age.not.present$age_group <- predict(age.model, age.not.present)
+
+# Have a quick check of the accuracy
+1 - (sum(age.present$age_group != predict(age.model, age.present)) / NROW(age.present))
+# count the subset of those who are more than 5 years out on their prediction (i.e. over 23 but predicted 'child' or under 55 but 'elderly')
+NROW(subset(age.present$))
+
+
+
+# split the data back into training and testing
+train <- full[1:891,]
+test <- full[892:1309,]
+
+# Finally, forcast the survival rate based on age_group, Pclass, sex, family size, is_mother
+set.seed(139)
+
+survival.model <- randomForest(factor(Survived) ~ age_group + Pclass + Sex
+                                                  + family_size + is_mother + Fare,
+                                                  data = train)
+
+# check accuracy on train data
+1 - (sum(train$Survived != predict(survival.model, train)) / NROW(train))
