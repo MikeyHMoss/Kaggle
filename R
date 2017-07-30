@@ -49,10 +49,6 @@ age.not.present$age_group <- predict(age.model, age.not.present)
 
 # Have a quick check of the accuracy
 1 - (sum(age.present$age_group != predict(age.model, age.present)) / NROW(age.present))
-# count the subset of those who are more than 5 years out on their prediction (i.e. over 23 but predicted 'child' or under 55 but 'elderly')
-NROW(subset(age.present$))
-
-
 
 # split the data back into training and testing
 train <- full[1:891,]
